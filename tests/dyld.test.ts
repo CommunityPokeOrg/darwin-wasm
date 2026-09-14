@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Machine } from '../src/core/machine';
 import { parseMachO, UnsupportedMachO } from '../src/core/macho/loader';
+import { Program } from '../tools/asm';
+import { writeMachO } from '../tools/macho-writer';
 
 describe('mini dyld', () => {
   it('binds and runs host stubs', () => {
@@ -17,5 +19,12 @@ describe('mini dyld', () => {
     for (let i = 0; i < view.getUint32(16, true); i++) at += view.getUint32(at + 4, true);
     view.setUint32(16, view.getUint32(16, true) + 1, true); view.setUint32(20, commands + 16, true); view.setUint32(at, 0x80000034, true); view.setUint32(at + 4, 16, true);
     expect(() => parseMachO(bytes)).toThrowError(new UnsupportedMachO('LC_DYLD_CHAINED_FIXUPS (modern iOS 15+ linkers) is not supported yet; see docs/LIMITATIONS.md'));
+  });
+  it('zeroes unknown imported symbols', () => {
+    const bytes = writeMachO(new Program(), { dyld: { symbols: ['_foo'] } });
+    const m = new Machine(); m.load(bytes);
+    expect(m.dyldReport?.unresolved).toEqual(['_foo']);
+    expect(m.dyldReport?.bound[0]?.via).toBe('null');
+    expect(m.image?.segments.find((segment) => segment.name === '__DATA')?.sections[0] && m.mem.read64(0x1_0001_0000n)).toBe(0n);
   });
 });

@@ -6,9 +6,10 @@ import { parseMachO, loadMachO } from './macho/loader';
 import { Darwin, SyscallEvent } from './darwin';
 import { Framebuffer } from './devices/framebuffer';
 import { InputQueue, InputEvent } from './devices/input';
-import { MiniDyld } from './dyld/dyld';
+import { MiniDyld, type DyldReport } from './dyld/dyld';
+import type { MachOImage } from './macho/loader';
 
-interface Events {
+export interface Events {
   stdout: string;
   stderr: string;
   log: string;
@@ -16,7 +17,7 @@ interface Events {
   exit: number;
   fault: Error;
   present: { imageData: Uint8ClampedArray; w: number; h: number };
-  dyld: import('./dyld/dyld').DyldReport;
+  dyld: DyldReport;
 }
 export type RunResult = { status: 'running' | 'exited' | 'faulted' | 'yield'; exitCode?: number; error?: Error };
 export class Machine extends TypedEmitter<Events> {
@@ -31,13 +32,16 @@ export class Machine extends TypedEmitter<Events> {
   private loadedBytes?: Uint8Array;
   private readonly syscalls: SyscallEvent[] = [];
   private readonly out: string[] = [];
-  dyld?: import('./dyld/dyld').MiniDyld;
-  dyldReport?: import('./dyld/dyld').DyldReport;
+  dyld?: MiniDyld;
+  dyldReport?: DyldReport;
+  private imageValue?: MachOImage;
+  get image(): MachOImage | undefined { return this.imageValue; }
 
   load(bytes: Uint8Array, opts: { argv?: string[]; envp?: string[] } = {}): void {
     this.reset();
     this.loadedBytes = bytes;
     const image = parseMachO(bytes);
+    this.imageValue = image;
     loadMachO(this.mem, image);
     this.dyld = new MiniDyld(this);
     this.dyldReport = this.dyld.link(image);

@@ -32,7 +32,7 @@ export class MiniDyld {
     const bind = image.dyldInfo && image.bytes ? image.bytes.slice(image.dyldInfo.bind_off, image.dyldInfo.bind_off + image.dyldInfo.bind_size) : new Uint8Array();
     const lazy = image.dyldInfo && image.bytes ? image.bytes.slice(image.dyldInfo.lazy_bind_off, image.dyldInfo.lazy_bind_off + image.dyldInfo.lazy_bind_size) : new Uint8Array();
     const rebase = image.dyldInfo && image.bytes ? image.bytes.slice(image.dyldInfo.rebase_off, image.dyldInfo.rebase_off + image.dyldInfo.rebase_size) : new Uint8Array();
-    this.parseRebase(rebase, image);
+    MiniDyld.skipRebaseStream(rebase);
     this.bindStream(image, bind, false, report); this.bindStream(image, lazy, true, report);
     for (const segment of image.segments) for (const section of segment.sections) {
       const type = section.flags & 0xff;
@@ -52,22 +52,21 @@ export class MiniDyld {
     if (id >= 0 && dylibPath) this.stubbedPaths.add(dylibPath);
     if (id < 0 && !report.unresolved.includes(name)) report.unresolved.push(name);
   }
-  private parseRebase(bytes: Uint8Array, image: MachOImage): void {
-    const p = { value: 0 }; let segment = 0; let address = 0n; let type = 1;
+  /** Validate and consume rebases; slide is always zero, so they are no-ops. */
+  private static skipRebaseStream(bytes: Uint8Array): void {
+    const p = { value: 0 };
     while (p.value < bytes.length) {
-      const op = bytes[p.value++] ?? 0; const opcode = op & 0xf0; const imm = op & 0x0f;
+      const op = bytes[p.value++] ?? 0; const opcode = op & 0xf0;
       if (opcode === 0) break;
-      if (opcode === 0x10) { type = imm; continue; }
-      if (opcode === 0x20) { segment = imm; address = ULEB(bytes, p); continue; }
-      if (opcode === 0x30) { address += ULEB(bytes, p); continue; }
-      if (opcode === 0x40) { address += BigInt(imm) * BigInt(type === 1 ? 8 : 1); continue; }
-      if (opcode === 0x50) { const count = imm; address += BigInt(count * (type === 1 ? 8 : 1)); continue; }
-      if (opcode === 0x60) { const count = ULEB(bytes, p); address += count * BigInt(type === 1 ? 8 : 1); continue; }
-      if (opcode === 0x70) { const count = imm; address += BigInt(count * (type === 1 ? 8 : 1)); continue; }
-      if (opcode === 0x80) { const count = ULEB(bytes, p); address += count * BigInt(type === 1 ? 8 : 1); }
-      void image; void segment;
+      if (opcode === 0x10) continue;
+      if (opcode === 0x20) { ULEB(bytes, p); continue; }
+      if (opcode === 0x30) { ULEB(bytes, p); continue; }
+      if (opcode === 0x40) continue;
+      if (opcode === 0x50) continue;
+      if (opcode === 0x60) { ULEB(bytes, p); continue; }
+      if (opcode === 0x70) { ULEB(bytes, p); continue; }
+      if (opcode === 0x80) { ULEB(bytes, p); ULEB(bytes, p); continue; }
     }
-    void address;
   }
   private bindStream(image: MachOImage, bytes: Uint8Array, lazy: boolean, report: DyldReport): void {
     if (!bytes.length) return;
