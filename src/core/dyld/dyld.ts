@@ -61,11 +61,11 @@ export class MiniDyld {
       if (opcode === 0x10) continue;
       if (opcode === 0x20) { ULEB(bytes, p); continue; }
       if (opcode === 0x30) { ULEB(bytes, p); continue; }
-      if (opcode === 0x40) continue;
-      if (opcode === 0x50) continue;
-      if (opcode === 0x60) { ULEB(bytes, p); continue; }
-      if (opcode === 0x70) { ULEB(bytes, p); continue; }
-      if (opcode === 0x80) { ULEB(bytes, p); ULEB(bytes, p); continue; }
+      if (opcode === 0x40) continue; // DO_REBASE_IMM_TIMES
+      if (opcode === 0x50) { ULEB(bytes, p); continue; } // DO_REBASE_ULEB_TIMES
+      if (opcode === 0x60) { ULEB(bytes, p); continue; } // DO_REBASE_ADD_ADDR_ULEB
+      if (opcode === 0x70) { ULEB(bytes, p); ULEB(bytes, p); continue; } // DO_REBASE_ULEB_TIMES_SKIPPING_ULEB
+      throw new Error(`unknown rebase opcode 0x${opcode.toString(16)}`);
     }
   }
   private bindStream(image: MachOImage, bytes: Uint8Array, lazy: boolean, report: DyldReport): void {
