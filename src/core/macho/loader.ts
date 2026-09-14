@@ -9,7 +9,6 @@ const LC_MAIN = 0x80000028;
 const LC_UNIXTHREAD = 0x5;
 const LC_LOAD_DYLIB = 0xc;
 const LC_BUILD_VERSION = 0x32;
-const PAGE = 0x1000n;
 
 export interface Segment {
   name: string;

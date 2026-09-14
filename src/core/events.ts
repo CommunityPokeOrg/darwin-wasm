@@ -1,5 +1,4 @@
-export type EventMap = Record<string, unknown>;
-export class TypedEmitter<E extends EventMap> {
+export class TypedEmitter<E extends object> {
   private readonly listeners = new Map<keyof E, Set<(value: never) => void>>();
   on<K extends keyof E>(name: K, listener: (value: E[K]) => void): () => void {
     let set = this.listeners.get(name);

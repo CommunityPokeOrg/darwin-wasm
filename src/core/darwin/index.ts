@@ -9,7 +9,7 @@ export interface SvcResult { ret: bigint; errno?: number; unsupported: boolean; 
 export class Darwin {
   constructor(readonly machine: Machine) {}
   handleSvc(): SvcResult {
-    const raw = Number(this.machine.cpu.state.x[16] ?? 0n);
+    const raw = Number(BigInt.asIntN(64, this.machine.cpu.state.x[16] ?? 0n));
     const args = Array.from(this.machine.cpu.state.x.slice(0, 6));
     let n = raw; let result: SvcResult;
     if ((raw & 0xff00_0000) === 0x4000_0000) { n = raw - 0x4000_0000; result = handleExtension(this, n); }

@@ -10,7 +10,8 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
+    "types": ["node"],
     "noEmit": true
   },
-  "include": ["vite.config.ts", "tools", "eslint.config.ts"]
+  "include": ["vite.config.ts", "tools", "types", "eslint.config.ts"]
 }

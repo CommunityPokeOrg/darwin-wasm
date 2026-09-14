@@ -46,28 +46,29 @@ export { decodeBitMasks };
 
 export function decode(word: number): Insn {
   word = u32(word);
+  const matches = (mask: number, value: number) => u32(word & mask) === u32(value);
   if (word === 0xd503201f) return { kind: 'nop', op: 'nop' };
-  if ((word & 0xfffffc1f) === 0xd503201f) {
+  if (matches(0xfffffc1f, 0xd503201f)) {
     const op = (word >>> 5) & 0x7;
     return { kind: 'hint', op: ['nop', 'yield', 'wfe', 'wfi', 'sev', 'nop', 'nop', 'nop'][op] ?? 'nop' };
   }
-  if ((word & 0xffe0001f) === 0xd4000001) return { kind: 'svc', imm: (word >>> 5) & 0xffff };
-  if ((word & 0xffe0001f) === 0xd4200000) return { kind: 'brk', imm: (word >>> 5) & 0xffff };
-  if ((word & 0xffe0001f) === 0xd4400000) return { kind: 'hlt', imm: (word >>> 5) & 0xffff };
+  if (matches(0xffe0001f, 0xd4000001)) return { kind: 'svc', imm: (word >>> 5) & 0xffff };
+  if (matches(0xffe0001f, 0xd4200000)) return { kind: 'brk', imm: (word >>> 5) & 0xffff };
+  if (matches(0xffe0001f, 0xd4400000)) return { kind: 'hlt', imm: (word >>> 5) & 0xffff };
   if ((word & 0x7c000000) === 0x14000000) return { kind: 'branch', op: (word & 0x80000000) ? 'bl' : 'b', imm: sign(word & 0x03ffffff, 26) << 2 };
   if ((word & 0xff000010) === 0x54000000) return { kind: 'bcond', cond: word & 15, imm: sign((word >>> 5) & 0x7ffff, 19) << 2 };
   if ((word & 0x7e000000) === 0x34000000) return { kind: 'cbz', nonzero: Boolean(word & 0x01000000), rt: word & 31, imm: sign((word >>> 5) & 0x7ffff, 19) << 2, sf: Boolean(word & 0x80000000) };
   if ((word & 0x7e000000) === 0x36000000) return { kind: 'tbz', nonzero: Boolean(word & 0x01000000), rt: word & 31, bit: ((word >>> 31) << 5) | ((word >>> 19) & 31), imm: sign((word >>> 5) & 0x3fff, 14) << 2 };
-  if ((word & 0xfffffc1f) === 0xd65f0000) return { kind: 'branchReg', op: 'ret', rn: (word >>> 5) & 31 };
-  if ((word & 0xfffffc1f) === 0xd61f0000) return { kind: 'branchReg', op: 'br', rn: (word >>> 5) & 31 };
-  if ((word & 0xfffffc1f) === 0xd63f0000) return { kind: 'branchReg', op: 'blr', rn: (word >>> 5) & 31 };
+  if (matches(0xfffffc1f, 0xd65f0000)) return { kind: 'branchReg', op: 'ret', rn: (word >>> 5) & 31 };
+  if (matches(0xfffffc1f, 0xd61f0000)) return { kind: 'branchReg', op: 'br', rn: (word >>> 5) & 31 };
+  if (matches(0xfffffc1f, 0xd63f0000)) return { kind: 'branchReg', op: 'blr', rn: (word >>> 5) & 31 };
   const sf = Boolean(word & 0x80000000);
   if ((word & 0x1f800000) === 0x12800000) {
     const op = (word >>> 29) & 3;
     return { kind: 'wide', op: op === 0 ? 'movn' : op === 2 ? 'movz' : 'movk', rd: word & 31, imm: (word >>> 5) & 0xffff, shift: ((word >>> 21) & 3) * 16, sf };
   }
   if ((word & 0x1f000000) === 0x11000000) {
-    const op = (word >>> 30) & 3;
+    const op = (word >>> 29) & 3;
     return { kind: 'imm', op: ['add', 'adds', 'sub', 'subs'][op] ?? 'add', rd: word & 31, rn: (word >>> 5) & 31, imm: ((word >>> 10) & 0xfff) << (((word >>> 22) & 1) * 12), shift: ((word >>> 22) & 1) * 12, sf };
   }
   if ((word & 0x1f000000) === 0x0a000000) {
@@ -77,15 +78,15 @@ export function decode(word: number): Insn {
     } catch { return { kind: 'unknown', word }; }
   }
   if ((word & 0x1f000000) === 0x10000000) return { kind: 'adr', rd: word & 31, imm: sign(((word >>> 29) & 3) | (((word >>> 5) & 0x7ffff) << 2), 21), page: Boolean(word & 0x80000000) };
-  if ((word & 0x1f800000) === 0x53000000) return { kind: 'bitfield', op: ['ubfm', 'sbfm', 'bfm'][(word >>> 29) & 3] as 'ubfm', rd: word & 31, rn: (word >>> 5) & 31, immr: (word >>> 16) & 0x3f, imms: (word >>> 10) & 0x3f, sf };
+  if (matches(0x1f800000, 0x53000000)) return { kind: 'bitfield', op: ['ubfm', 'sbfm', 'bfm'][(word >>> 29) & 3] as 'ubfm', rd: word & 31, rn: (word >>> 5) & 31, immr: (word >>> 16) & 0x3f, imms: (word >>> 10) & 0x3f, sf };
   if ((word & 0x1f800000) === 0x13800000) return { kind: 'extr', rd: word & 31, rn: (word >>> 5) & 31, rm: (word >>> 16) & 31, lsb: (word >>> 10) & 0x3f, sf };
   if ((word & 0x1f000000) === 0x0b000000) {
     const op = (word >>> 29) & 3;
     const shifted = ((word >>> 22) & 1) === 0;
     const amount = (word >>> 10) & 0x3f;
-    return { kind: 'reg', op: ['add', 'adds', 'sub', 'subs'][op] ?? 'add', rd: word & 31, rn: (word >>> 5) & 31, rm: (word >>> 16) & 31, shift: ['lsl', 'lsr', 'asr', 'ror'][(word >>> 22) & 3], amount, sf, extend: shifted ? undefined : (word >>> 13) & 7 };
+    return { kind: 'reg', op: ['add', 'adds', 'sub', 'subs'][op] ?? 'add', rd: word & 31, rn: (word >>> 5) & 31, rm: (word >>> 16) & 31, shift: ['lsl', 'lsr', 'asr', 'ror'][(word >>> 22) & 3] as Shift, amount, sf, extend: shifted ? undefined : (word >>> 13) & 7 };
   }
-  if ((word & 0x1fe0fc00) === 0x1b000000) return { kind: 'reg', op: (word & 0x40000000) ? 'msub' : 'madd', rd: word & 31, rn: (word >>> 5) & 31, rm: (word >>> 16) & 31, ra: (word >>> 10) & 31, sf };
+  if (matches(0x1f200000, 0x1b000000)) return { kind: 'reg', op: (word & 0x40000000) ? 'msub' : 'madd', rd: word & 31, rn: (word >>> 5) & 31, rm: (word >>> 16) & 31, ra: (word >>> 10) & 31, sf };
   if ((word & 0x1fe0fc00) === 0x1ac00800) return { kind: 'reg', op: 'udiv', rd: word & 31, rn: (word >>> 5) & 31, rm: (word >>> 16) & 31, sf };
   if ((word & 0x1fe0fc00) === 0x1ac00c00) return { kind: 'reg', op: 'sdiv', rd: word & 31, rn: (word >>> 5) & 31, rm: (word >>> 16) & 31, sf };
   if ((word & 0x1f000000) === 0x0a000000) return { kind: 'reg', op: ['and', 'orr', 'eor', 'ands'][(word >>> 29) & 3] ?? 'and', rd: word & 31, rn: (word >>> 5) & 31, rm: (word >>> 16) & 31, sf };
@@ -103,7 +104,7 @@ export function decode(word: number): Insn {
   if ((word & 0x3e000000) === 0x28000000) {
     const load = Boolean(word & 0x00400000);
     const pre = Boolean(word & 0x00000020);
-    const post = Boolean(word & 0x00000020) && !Boolean(word & 0x00000080);
+    const post = Boolean(word & 0x00000020) && !(word & 0x00000080);
     return { kind: 'pair', op: load ? 'ldp' : 'stp', rt: word & 31, rt2: (word >>> 10) & 31, rn: (word >>> 5) & 31, offset: sign((word >>> 15) & 0x7f, 7) * (sf ? 8 : 4), sf, pre, post };
   }
   if ((word & 0xffffffe0) === 0xd5033f9f) return { kind: 'hint', op: 'dmb' };
