@@ -1,0 +1,32 @@
+[
+  {
+    "name": "hello",
+    "description": "Writes a greeting through Darwin write(2).",
+    "file": "hello.bin"
+  },
+  {
+    "name": "math",
+    "description": "Computes and prints Fibonacci and arithmetic examples.",
+    "file": "math.bin"
+  },
+  {
+    "name": "canvas",
+    "description": "Draws a canvas and waits forever for input; Stop exits the sample.",
+    "file": "canvas.bin"
+  },
+  {
+    "name": "syscalls",
+    "description": "Exercises mmap, Mach ports, and an unsupported syscall.",
+    "file": "syscalls.bin"
+  },
+  {
+    "name": "fault",
+    "description": "Writes a message and deliberately reads unmapped 0xDEAD0000.",
+    "file": "fault.bin"
+  },
+  {
+    "name": "dyld",
+    "description": "Calls puts and exit through browser host stubs.",
+    "file": "dyld.bin"
+  }
+]

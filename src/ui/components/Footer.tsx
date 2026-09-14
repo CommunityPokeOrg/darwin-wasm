@@ -1,0 +1,1 @@
+export function Footer() { return <footer>TypeScript interpreter backend · Rust/WASM backend: not built yet (see <a href="https://github.com/CommunityPokeOrg/darwin-wasm/blob/main/docs/ARCHITECTURE.md" target="_blank" rel="noreferrer">docs/ARCHITECTURE.md</a>) · MIT · structure influenced by Lakr233/vphone-cli (MIT)</footer>; }
