@@ -1,4 +1,4 @@
-export type Fixup = { at: number; label: string; kind: 'b' | 'bl' | 'b.cond' | 'cbz' | 'adr'; cond?: number; rt?: number; sf?: boolean };
+export type Fixup = { at: number; label: string; kind: 'b' | 'bl' | 'b.cond' | 'cbz' | 'adr'; cond?: number; rt?: number; sf?: boolean; nonzero?: boolean };
 const reg = (r: number) => r & 31;
 export const movz = (rd: number, imm16: number, shift = 0, sf = true) => (sf ? 0xd2800000 : 0x52800000) | ((shift / 16) << 21) | ((imm16 & 0xffff) << 5) | reg(rd);
 export const movk = (rd: number, imm16: number, shift = 0, sf = true) => (sf ? 0xf2800000 : 0x72800000) | ((shift / 16) << 21) | ((imm16 & 0xffff) << 5) | reg(rd);
@@ -42,17 +42,17 @@ export class Program {
   bl_to(label: string): this { this.fixups.push({ at: this.words.length * 4, label, kind: 'bl' }); return this.emit(0); }
   b_to(label: string): this { this.fixups.push({ at: this.words.length * 4, label, kind: 'b' }); return this.emit(0); }
   b_cond_to(cond: number, label: string): this { this.fixups.push({ at: this.words.length * 4, label, kind: 'b.cond', cond }); return this.emit(0); }
-  cbz_to(rt: number, label: string, sf = true, nonzero = false): this { this.fixups.push({ at: this.words.length * 4, label, kind: 'cbz', rt, sf }); return this.emit(0); }
+  cbz_to(rt: number, label: string, sf = true, nonzero = false): this { this.fixups.push({ at: this.words.length * 4, label, kind: 'cbz', rt, sf, nonzero }); return this.emit(0); }
   adr_to(rd: number, label: string): this { this.fixups.push({ at: this.words.length * 4, label, kind: 'adr', rt: rd }); return this.emit(0); }
   dataString(name: string, value: string): this { const off = this.data.reduce((n, b) => n + b.length, 0); this.dataLabels.set(name, off); this.data.push(new TextEncoder().encode(`${value}\0`)); return this; }
   build(): { text: Uint8Array; data: Uint8Array } {
     const words = [...this.words]; const data = new Uint8Array(this.data.reduce((n, b) => n + b.length, 0)); let d = 0;
     for (const bytes of this.data) { data.set(bytes, d); d += bytes.length; }
     for (const fix of this.fixups) {
-      const target = this.labels.get(fix.label) ?? this.dataLabels.get(fix.label);
+      const target = this.labels.get(fix.label) ?? (this.dataLabels.has(fix.label) ? this.words.length * 4 + (this.dataLabels.get(fix.label) ?? 0) : undefined);
       if (target === undefined) throw new Error(`missing label ${fix.label}`);
       const rel = target - fix.at;
-      words[fix.at / 4] = fix.kind === 'bl' ? bl(rel) : fix.kind === 'b' ? b(rel) : fix.kind === 'b.cond' ? b_cond(fix.cond ?? 0, rel) : fix.kind === 'cbz' ? cbz(fix.rt ?? 0, rel, fix.sf) : adr(fix.rt ?? 0, rel);
+      words[fix.at / 4] = fix.kind === 'bl' ? bl(rel) : fix.kind === 'b' ? b(rel) : fix.kind === 'b.cond' ? b_cond(fix.cond ?? 0, rel) : fix.kind === 'cbz' ? cbz(fix.rt ?? 0, rel, fix.sf, fix.nonzero) : adr(fix.rt ?? 0, rel);
     }
     const text = new Uint8Array(words.length * 4); const view = new DataView(text.buffer); words.forEach((w, i) => view.setUint32(i * 4, w >>> 0, true)); return { text, data };
   }

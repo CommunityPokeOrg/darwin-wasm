@@ -1,5 +1,5 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
-import { Program, add_imm, add_reg, b_cond, cbz, cmp, ldr_imm, mov_reg, movz, movk, ret, str_imm, svc, sub, mul, udiv } from './asm';
+import { Program, add_reg, cmp, ldr_imm, mov_reg, movz, movk, str_imm, svc, sub } from './asm';
 import { writeMachO } from './macho-writer';
 
 const syscall = (n: number) => [movz(16, n), svc(0x80)];
@@ -13,11 +13,13 @@ const canvas = () => {
   const p = new Program();
   p.emit(sub(20, 31, 32));
   p.emit(movz(16, 0x4000, 16), movz(0, 0), ...[svc(0)]);
-  p.emit(mov_reg(19, 0), movz(16, 2), movk(16, 0x4000, 16), movz(0, 0), ...[svc(0)]);
+  p.emit(mov_reg(19, 0));
   p.label('poll').emit(movz(16, 2), movk(16, 0x4000, 16), mov_reg(0, 20), svc(0));
-  p.emit(cbz(0, 0, true), ldr_imm(21, 20, 0), movz(22, 2), cmp(21, 22), b_cond(1, 0), movz(24, 0x7f00, 16), movz(25, 0x3228), add_reg(24, 24, 25), movz(26, 0xff), str_imm(26, 24, 0, false), movz(16, 1), movk(16, 0x4000, 16), svc(0));
-  p.emit(movz(16, 3), movk(16, 0x4000, 16), movz(0, 16), svc(0), p.words[p.words.length - 1] ?? 0);
+  p.cbz_to(0, 'poll').emit(ldr_imm(21, 20, 12, false), movz(22, 2), cmp(21, 22, false));
+  p.b_cond_to(0, 'exit');
+  p.emit(movz(24, 0x7f00, 16), movz(25, 0x3228), add_reg(24, 24, 25), movz(26, 0xff), movk(26, 0xff00, 16), str_imm(26, 24, 0, false), movz(16, 1), movk(16, 0x4000, 16), svc(0));
   p.b_to('poll');
+  p.label('exit').emit(movz(0, 0), ...syscall(1));
   return p;
 };
 const syscalls = () => {
@@ -30,7 +32,7 @@ const syscalls = () => {
 };
 const fault = writeProgram('about to fault\n');
 fault.words.splice(fault.words.length - 2, 2);
-fault.emit(movz(0, 0xdead), movk(0, 0, 16), ldr_imm(0, 0, 0));
+fault.emit(movz(0, 0xdead, 16), ldr_imm(0, 0, 0));
 const samples: Record<string, { description: string; program: Program }> = {
   hello: { description: 'Writes a greeting through Darwin write(2).', program: writeProgram('Hello from ARM64 Darwin!\n') },
   math: { description: 'Computes and prints Fibonacci and arithmetic examples.', program: writeProgram('fib(20) = 6765\n12345*678/9 = 930190\n') },
