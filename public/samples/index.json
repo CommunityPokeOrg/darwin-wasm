@@ -23,5 +23,10 @@
     "name": "fault",
     "description": "Writes a message and deliberately reads unmapped 0xDEAD0000.",
     "file": "fault.bin"
+  },
+  {
+    "name": "dyld",
+    "description": "Calls puts and exit through browser host stubs.",
+    "file": "dyld.bin"
   }
 ]
