@@ -6,6 +6,7 @@ import { parseMachO, loadMachO } from './macho/loader';
 import { Darwin, SyscallEvent } from './darwin';
 import { Framebuffer } from './devices/framebuffer';
 import { InputQueue, InputEvent } from './devices/input';
+import { MiniDyld } from './dyld/dyld';
 
 interface Events {
   stdout: string;
@@ -15,6 +16,7 @@ interface Events {
   exit: number;
   fault: Error;
   present: { imageData: Uint8ClampedArray; w: number; h: number };
+  dyld: import('./dyld/dyld').DyldReport;
 }
 export type RunResult = { status: 'running' | 'exited' | 'faulted' | 'yield'; exitCode?: number; error?: Error };
 export class Machine extends TypedEmitter<Events> {
@@ -29,12 +31,17 @@ export class Machine extends TypedEmitter<Events> {
   private loadedBytes?: Uint8Array;
   private readonly syscalls: SyscallEvent[] = [];
   private readonly out: string[] = [];
+  dyld?: import('./dyld/dyld').MiniDyld;
+  dyldReport?: import('./dyld/dyld').DyldReport;
 
   load(bytes: Uint8Array, opts: { argv?: string[]; envp?: string[] } = {}): void {
     this.reset();
     this.loadedBytes = bytes;
     const image = parseMachO(bytes);
     loadMachO(this.mem, image);
+    this.dyld = new MiniDyld(this);
+    this.dyldReport = this.dyld.link(image);
+    this.emit('dyld', this.dyldReport);
     this.framebuffer.map(this.mem);
     this.framebuffer.clear(this.mem);
     const tls = this.mem.allocAnon(0x1000n);

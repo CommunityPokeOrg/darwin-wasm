@@ -8,6 +8,14 @@ const LC_SEGMENT_64 = 0x19;
 const LC_MAIN = 0x80000028;
 const LC_UNIXTHREAD = 0x5;
 const LC_LOAD_DYLIB = 0xc;
+const LC_LOAD_WEAK_DYLIB = 0x80000018;
+const LC_REEXPORT_DYLIB = 0x8000001f;
+const LC_SYMTAB = 0x2;
+const LC_DYSYMTAB = 0xb;
+const LC_DYLD_INFO = 0x22;
+const LC_DYLD_INFO_ONLY = 0x80000022;
+const LC_DYLD_CHAINED_FIXUPS = 0x80000034;
+const LC_DYLD_EXPORTS_TRIE = 0x80000033;
 const LC_BUILD_VERSION = 0x32;
 
 export interface Segment {
@@ -20,7 +28,9 @@ export interface Segment {
   initprot: number;
   sections: Section[];
 }
-export interface Section { name: string; segment: string; addr: bigint; size: bigint; offset: number; }
+export interface Section { name: string; segment: string; addr: bigint; size: bigint; offset: number; flags: number; reserved1: number; reserved2: number; }
+export interface MachOSymbol { index: number; n_strx: number; n_type: number; n_sect: number; n_value: bigint; name: string; }
+export interface DyldInfo { bind_off: number; bind_size: number; lazy_bind_off: number; lazy_bind_size: number; rebase_off: number; rebase_size: number; }
 export interface MachOImage {
   entry: bigint;
   segments: Segment[];
@@ -28,6 +38,11 @@ export interface MachOImage {
   minOs?: string;
   loadCommandsSummary: string[];
   bytes?: Uint8Array;
+  dylibs: string[];
+  symbols: MachOSymbol[];
+  indirectSymbols: number[];
+  dyldInfo?: DyldInfo;
+  chainedFixups: boolean;
 }
 
 const text = (bytes: Uint8Array, off: number, len: number) => new TextDecoder().decode(bytes.slice(off, off + len)).replace(/\0.*$/, '');
@@ -50,6 +65,11 @@ export function parseMachO(bytes: Uint8Array): MachOImage {
   let minOs: string | undefined;
   const segments: Segment[] = [];
   const summary: string[] = [];
+  const dylibs: string[] = [];
+  let symtab: { symoff: number; nsyms: number; stroff: number; strsize: number } | undefined;
+  let dysymtab: { indirectsymoff: number; nindirectsyms: number } | undefined;
+  let dyldInfo: DyldInfo | undefined;
+  let chainedFixups = false;
   let off = 32;
   for (let i = 0; i < ncmds; i++) {
     const cmd = u32(bytes, off);
@@ -66,7 +86,7 @@ export function parseMachO(bytes: Uint8Array): MachOImage {
       const nsects = u32(bytes, off + 64);
       for (let j = 0; j < nsects; j++) {
         const so = off + 72 + j * 80;
-        sections.push({ name: text(bytes, so, 16), segment: text(bytes, so + 16, 16), addr: u64(bytes, so + 32), size: u64(bytes, so + 40), offset: u32(bytes, so + 48) });
+        sections.push({ name: text(bytes, so, 16), segment: text(bytes, so + 16, 16), addr: u64(bytes, so + 32), size: u64(bytes, so + 40), offset: u32(bytes, so + 48), flags: u32(bytes, so + 64), reserved1: u32(bytes, so + 68), reserved2: u32(bytes, so + 72) });
       }
       segments.push({ name, vmaddr, vmsize, fileoff, filesize, maxprot: u32(bytes, off + 56), initprot: u32(bytes, off + 60), sections });
       if (name === '__TEXT') textBase = vmaddr;
@@ -74,21 +94,40 @@ export function parseMachO(bytes: Uint8Array): MachOImage {
       entry = textBase + u64(bytes, off + 8);
     } else if (cmd === LC_UNIXTHREAD) {
       entry = u64(bytes, off + 8 + 17 * 8);
-    } else if (cmd === LC_LOAD_DYLIB) {
+    } else if (cmd === LC_LOAD_DYLIB || cmd === LC_LOAD_WEAK_DYLIB || cmd === LC_REEXPORT_DYLIB) {
       const name = text(bytes, off + u32(bytes, off + 8), size - u32(bytes, off + 8));
-      if (name !== '/usr/lib/libSystem.B.dylib') throw new Error('dynamically linked binary requires dyld, not supported');
+      dylibs.push(name);
+    } else if (cmd === LC_SYMTAB) {
+      symtab = { symoff: u32(bytes, off + 8), nsyms: u32(bytes, off + 12), stroff: u32(bytes, off + 16), strsize: u32(bytes, off + 20) };
+    } else if (cmd === LC_DYSYMTAB) {
+      dysymtab = { indirectsymoff: u32(bytes, off + 56), nindirectsyms: u32(bytes, off + 60) };
+    } else if (cmd === LC_DYLD_INFO || cmd === LC_DYLD_INFO_ONLY) {
+      dyldInfo = { rebase_off: u32(bytes, off + 8), rebase_size: u32(bytes, off + 12), bind_off: u32(bytes, off + 16), bind_size: u32(bytes, off + 20), lazy_bind_off: u32(bytes, off + 24), lazy_bind_size: u32(bytes, off + 28) };
     } else if (cmd === LC_BUILD_VERSION) {
       const min = u32(bytes, off + 12);
       minOs = `${min >> 16}.${(min >> 8) & 0xff}.${min & 0xff}`;
-    } else if (cmd === 0x80000034 || cmd === 0x22) {
-      summary.push('warning: dyld fixups are not resolved; unresolved symbols will fault');
+    } else if (cmd === LC_DYLD_CHAINED_FIXUPS || cmd === LC_DYLD_EXPORTS_TRIE) {
+      chainedFixups = true;
     } else if (cmd === 0x2d || cmd === 0x1d) {
       throw new Error('code signatures/encrypted segments are not supported');
     }
     off += size;
   }
   if (entry === undefined) throw new Error('Mach-O missing entry point');
-  return { entry, segments, isPie: Boolean(flags & 0x200000), minOs, loadCommandsSummary: summary, bytes };
+  if (chainedFixups) throw new UnsupportedMachO('LC_DYLD_CHAINED_FIXUPS (modern iOS 15+ linkers) is not supported yet; see docs/LIMITATIONS.md');
+  const symbols: MachOSymbol[] = [];
+  if (symtab) for (let i = 0; i < symtab.nsyms; i++) {
+    const so = symtab.symoff + i * 16;
+    const n_strx = u32(bytes, so); const name = n_strx < symtab.strsize ? text(bytes, symtab.stroff + n_strx, symtab.strsize - n_strx) : '';
+    symbols.push({ index: i, n_strx, n_type: bytes[so + 4] ?? 0, n_sect: bytes[so + 5] ?? 0, n_value: u64(bytes, so + 8), name });
+  }
+  const indirectSymbols: number[] = [];
+  if (dysymtab) for (let i = 0; i < dysymtab.nindirectsyms; i++) indirectSymbols.push(u32(bytes, dysymtab.indirectsymoff + i * 4));
+  return { entry, segments, isPie: Boolean(flags & 0x200000), minOs, loadCommandsSummary: summary, bytes, dylibs, symbols, indirectSymbols, dyldInfo, chainedFixups };
+}
+
+export class UnsupportedMachO extends Error {
+  constructor(message: string) { super(message); this.name = 'UnsupportedMachO'; }
 }
 
 export function loadMachO(mem: Memory, image: MachOImage, slide = 0n): void {
